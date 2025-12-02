@@ -195,8 +195,25 @@ def create_venue(venue: VenueSchema, db: Session = Depends(get_db)):
 
 
 @app.get("/venues")
-def get_venues(db: Session = Depends(get_db)):
-    return db.query(Venue).all()
+def get_venues(
+    location: str = None,
+    category: str = None,
+    db: Session = Depends(get_db)
+):
+    # Start with a query that selects everything
+    query = db.query(Venue)
+
+    # 1. Apply Location Filter (if provided)
+    if location:
+        # ilike means "Case Insensitive" (karen matches Karen)
+        # f"%{location}%" means it matches partial words (e.g. "West" matches "Westlands")
+        query = query.filter(Venue.location.ilike(f"%{location}%"))
+
+    # 2. Apply Category Filter (if provided)
+    if category:
+        query = query.filter(Venue.category == category)
+
+    return query.all()
 
 
 # 3. BOOKINGS (The Critical Logic)
