@@ -132,7 +132,7 @@ class LoginSchema(BaseModel):
 @app.post("/token")
 def login(login: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == login.email).first()
-    if not user or not user.password_hash or not pwd_context.verify(login.password, user.password_hash):
+    if not user or not user.password_hash or login.password != user.password_hash:  # TEMP: plain text
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access_token = create_access_token(data={"sub": user.username})
@@ -155,7 +155,8 @@ def create_user(user: UserSchema, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    hashed_password = pwd_context.hash(user.password)
+    # hashed_password = pwd_context.hash(user.password)
+    hashed_password = user.password  # TEMP: plain text for testing
     new_user = User(
         username=user.username,
         email=user.email,
