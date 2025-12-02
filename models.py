@@ -27,7 +27,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     username = Column(Text, unique=True, nullable=False)
     email = Column(Text, unique=True, nullable=False)
-    password_hash = Column(Text, nullable=False) # In a real app, hash this!
+    password_hash = Column(Text, nullable=False) 
     role = Column(Text, default="Client") # 'Admin' or 'Client'
 
 # --- 2. Venues Table ---
