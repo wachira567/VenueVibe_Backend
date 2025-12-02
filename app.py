@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from models import get_db, User, Venue, Booking
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+import cloudinary
+import cloudinary.uploader
 
 # Load env variables
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -31,6 +33,13 @@ oauth.register(
     client_secret=GOOGLE_CLIENT_SECRET,
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'}
+)
+
+# Configure Cloudinary
+cloudinary.config(
+  cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME"),
+  api_key = os.getenv("CLOUDINARY_API_KEY"),
+  api_secret = os.getenv("CLOUDINARY_API_SECRET")
 )
 
 # JWT settings
@@ -238,6 +247,16 @@ def create_booking(booking: BookingSchema, db: Session = Depends(get_db)):
     db.add(new_booking)
     db.commit()
     return {"message": "Booking request submitted", "status": "Pending"}
+
+
+# --- NEW ENDPOINT: Image Upload (Admin Only) ---
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
+    # 1. Upload the file to Cloudinary
+    result = cloudinary.uploader.upload(file.file)
+    # 2. Get the secure URL
+    url = result.get("secure_url")
+    return {"url": url}
 
 
 @app.get("/bookings")

@@ -14,6 +14,8 @@ httpx = "*"
 itsdangerous = "*"
 python-jose = {extras = ["cryptography"], version = "*"}
 psycopg2-binary = "*"
+cloudinary = "*"
+python-multipart = "*"
 
 [dev-packages]
 

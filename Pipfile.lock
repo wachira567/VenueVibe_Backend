@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "866f80971a70cab2d44084e28fb95400dc8c56990218553821cbd09644a1a774"
+            "sha256": "3036ddaf057ea40b0bae4979bbfccd2ed23105cb8f993b3a6d06bdb91736bcf3"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -232,6 +232,14 @@
             "markers": "python_version >= '3.10'",
             "version": "==8.3.1"
         },
+        "cloudinary": {
+            "hashes": [
+                "sha256:62d4374b79d5476de2a86cb6a1da709a5429e02aef474bfc5d99f3e38a1a62ff",
+                "sha256:b4785031179a5ec7010f46665e5c8fad2cae022c18405546f01d257e02f78b1c"
+            ],
+            "index": "pypi",
+            "version": "==1.44.1"
+        },
         "cryptography": {
             "hashes": [
                 "sha256:00a5e7e87938e5ff9ff5447ab086a5706a957137e6e433841e9d24f38a065217",
@@ -289,6 +297,7 @@
                 "sha256:ef639cb3372f69ec44915fafcd6698b6cc78fbe0c2ea41be867f6ed612811963",
                 "sha256:f260d0d41e9b4da1ed1e0f1ce571f97fe370b152ab18778e9e8f67d6af432018"
             ],
+            "markers": "python_version >= '3.8' and python_full_version not in '3.9.0, 3.9.1'",
             "version": "==46.0.3"
         },
         "dnspython": {
@@ -1061,6 +1070,8 @@
                 "sha256:8a62d3a8335e06589fe01f2a3e178cdcc632f3fbe0d492ad9ee0ec35aab1f104",
                 "sha256:8dd0cab45b8e23064ae09147625994d090fa46f5b0d1e13af944c331a7fa9d13"
             ],
+            "index": "pypi",
+            "markers": "python_version >= '3.8'",
             "version": "==0.0.20"
         },
         "pyyaml": {
