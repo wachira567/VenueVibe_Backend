@@ -9,6 +9,10 @@ alembic = "*"
 fastapi = {extras = ["standard"], version = "*"}
 python-dotenv = "*"
 passlib = {extras = ["bcrypt"], version = "*"}
+authlib = "*"
+httpx = "*"
+itsdangerous = "*"
+python-jose = {extras = ["cryptography"], version = "*"}
 
 [dev-packages]
 

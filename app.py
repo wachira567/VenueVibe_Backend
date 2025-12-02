@@ -1,14 +1,51 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+import os
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
+from starlette.responses import RedirectResponse
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import get_db, User, Venue, Booking
 from passlib.context import CryptContext
+from jose import JWTError, jwt
+
+# Load env variables
+SECRET_KEY = os.getenv("SECRET_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
 app = FastAPI(title="VenueVibe API")
 
+# Session middleware for OAuth
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth setup
+oauth = OAuth()
+oauth.register(
+    name='google',
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
+
+# JWT settings
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 # CORS (Allows React frontend to talk to this backend)
 app.add_middleware(
@@ -43,6 +80,63 @@ class BookingSchema(BaseModel):
     venue_id: int
     event_date: datetime
     guest_count: int
+
+
+# --- Google OAuth Routes ---
+
+@app.get("/login/google")
+async def login_google(request: Request):
+    redirect_uri = request.url_for('auth_google')
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth/google")
+async def auth_google(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception as error:
+        raise HTTPException(status_code=401, detail=f"Google login failed: {error}")
+
+    user_info = token.get('userinfo')
+    if not user_info:
+        raise HTTPException(status_code=400, detail="Failed to get user info from Google")
+
+    google_email = user_info['email']
+    google_name = user_info.get('name', google_email.split('@')[0])
+
+    user = db.query(User).filter(User.email == google_email).first()
+
+    if not user:
+        user = User(
+            username=google_name,
+            email=google_email,
+            password_hash=None,
+            role="Client",
+            provider="google"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    access_token = create_access_token(data={"sub": user.username})
+
+    frontend_url = f"http://localhost:3000/google-callback?token={access_token}&role={user.role}"
+    return RedirectResponse(url=frontend_url)
+
+
+# --- Email Login ---
+
+class LoginSchema(BaseModel):
+    email: str
+    password: str
+
+@app.post("/token")
+def login(login: LoginSchema, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == login.email).first()
+    if not user or not user.password_hash or not pwd_context.verify(login.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer", "role": user.role}
 
 
 # --- Endpoints ---
