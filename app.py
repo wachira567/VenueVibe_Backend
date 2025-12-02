@@ -4,8 +4,11 @@ from pydantic import BaseModel
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import get_db, User, Venue, Booking
+from passlib.context import CryptContext
 
 app = FastAPI(title="VenueVibe API")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # CORS (Allows React frontend to talk to this backend)
 app.add_middleware(
@@ -58,10 +61,11 @@ def create_user(user: UserSchema, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    hashed_password = pwd_context.hash(user.password)
     new_user = User(
         username=user.username,
         email=user.email,
-        password_hash=user.password,
+        password_hash=hashed_password,
         role=user.role,
     )
     db.add(new_user)

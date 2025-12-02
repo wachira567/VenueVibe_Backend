@@ -8,6 +8,7 @@ sqlalchemy = "*"
 alembic = "*"
 fastapi = {extras = ["standard"], version = "*"}
 python-dotenv = "*"
+passlib = {extras = ["bcrypt"], version = "*"}
 
 [dev-packages]
 
