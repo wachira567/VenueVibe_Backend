@@ -16,6 +16,7 @@ python-jose = {extras = ["cryptography"], version = "*"}
 psycopg2-binary = "*"
 cloudinary = "*"
 python-multipart = "*"
+reportlab = "*"
 
 [dev-packages]
 
