@@ -17,6 +17,11 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Setup Engine
+# Use pg8000 for PostgreSQL (compatible with Python 3.13)
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    # Convert postgresql:// to postgresql+pg8000://
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+
 engine = create_engine(DATABASE_URL, echo=True)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
