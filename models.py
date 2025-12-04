@@ -14,30 +14,18 @@ from dotenv import load_dotenv
 
 # Load env variables
 load_dotenv()
+
+# 1. Get the URL exactly as Neon gives it
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Setup Engine
-# Use pg8000 for PostgreSQL (compatible with Python 3.13)
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgresql://"):
-        # Convert postgresql:// to postgresql+pg8000://
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+# 2. Fix the "postgres://" legacy bug (Render sometimes provides 'postgres://' but SQLAlchemy needs 'postgresql://')
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-    # For Neon, clean up the URL and use connect_args for SSL
-    if "neon.tech" in DATABASE_URL:
-        # Parse and clean the URL - remove problematic query parameters
-        base_url = DATABASE_URL.split('?')[0]  # Remove all query parameters
-
-        # Use connect_args to specify SSL mode for pg8000
-        engine = create_engine(
-            base_url,
-            echo=True,
-            connect_args={'sslmode': 'require'}
-        )
-    else:
-        engine = create_engine(DATABASE_URL, echo=True)
-else:
-    engine = create_engine(DATABASE_URL, echo=True)
+# 3. Create Engine (Use psycopg2 - implicit default)
+# We DO NOT need connect_args={'sslmode': 'require'} here because
+# your Neon URL already has ?sslmode=require at the end.
+engine = create_engine(DATABASE_URL, echo=True)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 

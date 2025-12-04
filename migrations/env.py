@@ -12,19 +12,18 @@ load_dotenv()
 # access to the values within the .ini file in use.
 config = context.config
 
-# Overwrite the sqlalchemy.url in the config with the one from .env
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL:
-    if DATABASE_URL.startswith("postgresql://"):
-        # Convert postgresql:// to postgresql+pg8000://
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+# 1. Get config
+config = context.config
 
-    # For Neon, clean up the URL - remove problematic query parameters
-    if "neon.tech" in DATABASE_URL:
-        # Parse and clean the URL - remove all query parameters
-        DATABASE_URL = DATABASE_URL.split('?')[0]  # Remove all query parameters
+# 2. Get URL from Env
+database_url = os.getenv("DATABASE_URL")
 
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# 3. Fix legacy prefix if needed
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+# 4. Set the URL in Alembic config
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -69,24 +68,11 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
-    # Use the same engine creation logic as the main app
-    DATABASE_URL = config.get_main_option("sqlalchemy.url")
-
-    # For Neon databases, add SSL configuration
-    connect_args = {}
-    if DATABASE_URL and "neon.tech" in DATABASE_URL:
-        connect_args = {'sslmode': 'require'}
-
-    connectable = create_engine(
-        DATABASE_URL,
+    """Run migrations in 'online' mode."""
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args=connect_args
     )
 
     with connectable.connect() as connection:
