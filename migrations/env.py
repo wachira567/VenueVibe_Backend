@@ -1,9 +1,9 @@
 import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import pool, create_engine
 from alembic import context
-from dotenv import load_dotenv 
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
@@ -13,7 +13,18 @@ load_dotenv()
 config = context.config
 
 # Overwrite the sqlalchemy.url in the config with the one from .env
-config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgresql://"):
+        # Convert postgresql:// to postgresql+pg8000://
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+
+    # For Neon, remove all query parameters and use connect_args for SSL
+    if "neon.tech" in DATABASE_URL:
+        # Parse and rebuild URL without any query parameters
+        DATABASE_URL = DATABASE_URL.split('?')[0]  # Remove all query parameters
+
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -64,10 +75,18 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    # Use the same engine creation logic as the main app
+    DATABASE_URL = config.get_main_option("sqlalchemy.url")
+
+    # For Neon databases, add SSL configuration
+    connect_args = {}
+    if DATABASE_URL and "neon.tech" in DATABASE_URL:
+        connect_args = {'sslmode': 'require'}
+
+    connectable = create_engine(
+        DATABASE_URL,
         poolclass=pool.NullPool,
+        connect_args=connect_args
     )
 
     with connectable.connect() as connection:
