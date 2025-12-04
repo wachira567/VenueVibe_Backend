@@ -23,11 +23,10 @@ if DATABASE_URL:
         # Convert postgresql:// to postgresql+pg8000://
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
 
-    # For Neon, simplify the connection string (remove problematic parameters)
+    # For Neon, remove all query parameters as pg8000 handles SSL differently
     if "neon.tech" in DATABASE_URL:
-        # Parse and rebuild URL without problematic query parameters
-        base_url = DATABASE_URL.split('?')[0]  # Remove query parameters
-        DATABASE_URL = f"{base_url}?sslmode=require"
+        # Parse and rebuild URL without any query parameters
+        DATABASE_URL = DATABASE_URL.split('?')[0]  # Remove all query parameters
 
 engine = create_engine(DATABASE_URL, echo=True)
 Session = sessionmaker(bind=engine)
