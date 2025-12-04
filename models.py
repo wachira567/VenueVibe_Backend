@@ -18,9 +18,16 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Setup Engine
 # Use pg8000 for PostgreSQL (compatible with Python 3.13)
-if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
-    # Convert postgresql:// to postgresql+pg8000://
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgresql://"):
+        # Convert postgresql:// to postgresql+pg8000://
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+
+    # For Neon, simplify the connection string (remove problematic parameters)
+    if "neon.tech" in DATABASE_URL:
+        # Parse and rebuild URL without problematic query parameters
+        base_url = DATABASE_URL.split('?')[0]  # Remove query parameters
+        DATABASE_URL = f"{base_url}?sslmode=require"
 
 engine = create_engine(DATABASE_URL, echo=True)
 Session = sessionmaker(bind=engine)
