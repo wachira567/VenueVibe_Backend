@@ -12,6 +12,7 @@ from fastapi import (
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from authlib.integrations.starlette_client import OAuth
 from starlette.responses import RedirectResponse
 from pydantic import BaseModel
@@ -37,8 +38,18 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 app = FastAPI(title="VenueVibe API")
 
-# Session middleware for OAuth
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+# 1. TRUST RENDER'S PROXY (Critical for HTTPS/Google Auth)
+# This tells FastAPI: "Trust that the request coming from Render is actually HTTPS"
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
+
+# 2. SESSION MIDDLEWARE (Updated for Production)
+# We set https_only=True and same_site="lax" to ensure cookies work in redirect
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    https_only=True,   # Only send cookie over HTTPS
+    same_site="lax"    # Allow cookie in redirects
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

@@ -22,10 +22,15 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# 3. Create Engine (Use psycopg2 - implicit default)
-# We DO NOT need connect_args={'sslmode': 'require'} here because
-# your Neon URL already has ?sslmode=require at the end.
-engine = create_engine(DATABASE_URL, echo=True)
+# 3. Create Engine with "Pre-Ping" (CRITICAL FOR NEON)
+engine = create_engine(
+    DATABASE_URL,
+    echo=True,
+    pool_pre_ping=True,   # <--- Checks connection before use (Fixes SSL closed error)
+    pool_recycle=300,     # <--- Recycle connections every 5 minutes
+    pool_size=5,          # <--- Keep 5 connections open
+    max_overflow=10       # <--- Allow 10 extra during spikes
+)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
