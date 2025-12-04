@@ -23,14 +23,14 @@ if DATABASE_URL:
         # Convert postgresql:// to postgresql+pg8000://
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
 
-    # For Neon, remove all query parameters and use connect_args for SSL
+    # For Neon, clean up the URL and use connect_args for SSL
     if "neon.tech" in DATABASE_URL:
-        # Parse and rebuild URL without any query parameters
-        DATABASE_URL = DATABASE_URL.split('?')[0]  # Remove all query parameters
+        # Parse and clean the URL - remove problematic query parameters
+        base_url = DATABASE_URL.split('?')[0]  # Remove all query parameters
 
         # Use connect_args to specify SSL mode for pg8000
         engine = create_engine(
-            DATABASE_URL,
+            base_url,
             echo=True,
             connect_args={'sslmode': 'require'}
         )

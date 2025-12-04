@@ -19,9 +19,9 @@ if DATABASE_URL:
         # Convert postgresql:// to postgresql+pg8000://
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
 
-    # For Neon, remove all query parameters and use connect_args for SSL
+    # For Neon, clean up the URL - remove problematic query parameters
     if "neon.tech" in DATABASE_URL:
-        # Parse and rebuild URL without any query parameters
+        # Parse and clean the URL - remove all query parameters
         DATABASE_URL = DATABASE_URL.split('?')[0]  # Remove all query parameters
 
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
