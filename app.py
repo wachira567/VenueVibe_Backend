@@ -18,6 +18,7 @@ from starlette.responses import RedirectResponse
 from pydantic import BaseModel
 from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from models import get_db, User, Venue, Booking, SavedVenue
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -36,6 +37,7 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+
 app = FastAPI(title="VenueVibe API")
 
 # 1. TRUST RENDER'S PROXY (Critical for HTTPS/Google Auth)
@@ -47,8 +49,8 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
-    https_only=True,   # Only send cookie over HTTPS
-    same_site="lax"    # Allow cookie in redirects
+    https_only=True,  # Only send cookie over HTTPS
+    same_site="lax",  # Allow cookie in redirects
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -96,6 +98,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # --- Pydantic Schemas (Data Validation) ---
 
@@ -185,9 +188,7 @@ class LoginSchema(BaseModel):
 @app.post("/token")
 def login(login: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == login.email).first()
-    if (
-        not user or not user.password_hash or login.password != user.password_hash
-    ):  # TEMP: plain text
+    if not user or not pwd_context.verify(login.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -215,8 +216,7 @@ def create_user(user: UserSchema, db: Session = Depends(get_db)):
     if existing_username:
         raise HTTPException(status_code=400, detail="Username already taken")
 
-    # hashed_password = pwd_context.hash(user.password)
-    hashed_password = user.password  # TEMP: plain text for testing
+    hashed_password = pwd_context.hash(user.password)
     new_user = User(
         username=user.username,
         email=user.email,
@@ -348,6 +348,7 @@ def create_booking(booking: BookingSchema, db: Session = Depends(get_db)):
 
     db.add(new_booking)
     db.commit()
+
     return {"message": "Booking request submitted", "status": "Pending"}
 
 
@@ -428,6 +429,283 @@ def save_venue(
 
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# Admin endpoints
+
+
+@app.put("/bookings/{booking_id}/status")
+def update_booking_status_admin(
+    booking_id: int,
+    status_update: dict,
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    previous_status = booking.status
+
+    if "status" in status_update:
+        booking.status = status_update["status"]
+
+    if "payment_status" in status_update:
+        booking.payment_status = status_update["payment_status"]
+
+    db.commit()
+
+    return {"message": "Booking updated"}
+
+
+@app.get("/admin/reports")
+def get_admin_reports(authorization: str = Header(...), db: Session = Depends(get_db)):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    total_revenue = (
+        db.query(func.sum(Booking.total_cost))
+        .filter(Booking.status == "Approved")
+        .scalar()
+        or 0
+    )
+    total_bookings = db.query(Booking).count()
+    total_users = db.query(User).count()
+    total_venues = db.query(Venue).count()
+
+    bookings_by_status = (
+        db.query(Booking.status, func.count(Booking.id)).group_by(Booking.status).all()
+    )
+
+    recent_bookings = (
+        db.query(Booking).order_by(Booking.created_at.desc()).limit(5).all()
+    )
+
+    return {
+        "stats": {
+            "revenue": total_revenue,
+            "bookings": total_bookings,
+            "users": total_users,
+            "venues": total_venues,
+        },
+        "charts": {
+            "status_distribution": [
+                {"name": s, "value": c} for s, c in bookings_by_status
+            ]
+        },
+        "recent_activity": [
+            {
+                "id": b.id,
+                "user": b.user.username if b.user else "Unknown",
+                "venue": b.venue.name if b.venue else "Unknown",
+                "status": b.status,
+                "total_cost": b.total_cost,
+                "created_at": b.created_at,
+            }
+            for b in recent_bookings
+        ],
+    }
+
+
+@app.get("/admin/bookings")
+def get_all_bookings(authorization: str = Header(...), db: Session = Depends(get_db)):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    bookings = db.query(Booking).all()
+    return [
+        {
+            "id": b.id,
+            "user": b.user.username if b.user else "Unknown",
+            "venue": b.venue.name if b.venue else "Unknown",
+            "event_date": b.event_date,
+            "end_date": b.end_date,
+            "guest_count": b.guest_count,
+            "total_cost": b.total_cost,
+            "status": b.status,
+            "payment_status": b.payment_status,
+            "contact_email": b.contact_email,
+            "contact_phone": b.contact_phone,
+            "created_at": b.created_at,
+        }
+        for b in bookings
+    ]
+
+
+@app.get("/admin/users")
+def get_all_users(authorization: str = Header(...), db: Session = Depends(get_db)):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    users = db.query(User).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "provider": u.provider,
+            "phone": u.phone,
+            "location": u.location,
+            "created_at": u.created_at,
+        }
+        for u in users
+    ]
+
+
+@app.get("/admin/venues")
+def get_all_venues(authorization: str = Header(...), db: Session = Depends(get_db)):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    venues = db.query(Venue).all()
+    return [
+        {
+            "id": v.id,
+            "name": v.name,
+            "location": v.location,
+            "capacity": v.capacity,
+            "price_per_day": v.price_per_day,
+            "category": v.category,
+            "image_url": v.image_url,
+            "description": v.description,
+        }
+        for v in venues
+    ]
+
+
+@app.put("/venues/{venue_id}")
+def update_venue_admin(
+    venue_id: int,
+    venue_data: dict,
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    venue = db.query(Venue).filter(Venue.id == venue_id).first()
+    if not venue:
+        raise HTTPException(status_code=404, detail="Venue not found")
+
+    if "name" in venue_data:
+        venue.name = venue_data["name"]
+    if "location" in venue_data:
+        venue.location = venue_data["location"]
+    if "capacity" in venue_data:
+        venue.capacity = venue_data["capacity"]
+    if "price_per_day" in venue_data:
+        venue.price_per_day = venue_data["price_per_day"]
+    if "category" in venue_data:
+        venue.category = venue_data["category"]
+    if "image_url" in venue_data:
+        venue.image_url = venue_data["image_url"]
+    if "description" in venue_data:
+        venue.description = venue_data["description"]
+
+    db.commit()
+    return {"message": "Venue updated"}
+
+
+@app.delete("/venues/{venue_id}")
+def delete_venue_admin(
+    venue_id: int,
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    venue = db.query(Venue).filter(Venue.id == venue_id).first()
+    if not venue:
+        raise HTTPException(status_code=404, detail="Venue not found")
+    db.delete(venue)
+    db.commit()
+    return {"message": "Venue deleted"}
+
+
+@app.delete("/users/{user_id}")
+def delete_user_admin(
+    user_id: int,
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_token = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id_token)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user_to_delete = db.query(User).filter(User.id == user_id).first()
+    if not user_to_delete:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user_to_delete)
+    db.commit()
+    return {"message": "User deleted"}
 
 
 @app.get("/bookings/{booking_id}/invoice")

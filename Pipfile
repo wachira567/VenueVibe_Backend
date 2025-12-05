@@ -17,6 +17,7 @@ psycopg2-binary = "*"
 cloudinary = "*"
 python-multipart = "*"
 reportlab = "*"
+fastapi-mail = "*"
 
 [dev-packages]
 

@@ -26,10 +26,10 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 engine = create_engine(
     DATABASE_URL,
     echo=True,
-    pool_pre_ping=True,   # <--- Checks connection before use (Fixes SSL closed error)
-    pool_recycle=300,     # <--- Recycle connections every 5 minutes
-    pool_size=5,          # <--- Keep 5 connections open
-    max_overflow=10       # <--- Allow 10 extra during spikes
+    pool_pre_ping=True,  # <--- Checks connection before use (Fixes SSL closed error)
+    pool_recycle=300,  # <--- Recycle connections every 5 minutes
+    pool_size=5,  # <--- Keep 5 connections open
+    max_overflow=10,  # <--- Allow 10 extra during spikes
 )
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -55,6 +55,7 @@ class User(Base):
     provider = Column(Text, default="email")  # 'email' or 'google'
     phone = Column(Text, nullable=True)
     location = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 # --- 2. Venues Table ---
@@ -69,6 +70,10 @@ class Venue(Base):
     category = Column(Text, nullable=False)  # 'Garden', 'Hall'
     image_url = Column(Text)
     description = Column(Text)
+    # Relationship to reviews
+    reviews = relationship(
+        "Review", back_populates="venue", cascade="all, delete-orphan"
+    )
 
 
 # --- 3. Bookings Table ---
@@ -79,12 +84,17 @@ class Booking(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     venue_id = Column(Integer, ForeignKey("venues.id"))
     event_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=True)  # Optional end date for multi-day bookings
+    end_date = Column(
+        DateTime, nullable=True
+    )  # Optional end date for multi-day bookings
     guest_count = Column(Integer, nullable=False)
     total_cost = Column(Integer, nullable=False)
     status = Column(Text, default="Pending")  # 'Pending', 'Approved', 'Rejected'
+    # NEW: Payment Tracking
+    payment_status = Column(Text, default="Unpaid")  # 'Unpaid', 'Paid'
     contact_email = Column(Text, nullable=True)  # Will be required in booking form
     contact_phone = Column(Text, nullable=True)  # Optional contact phone
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships (Optional but helpful for joins)
     user = relationship("User")
@@ -108,3 +118,17 @@ class SavedVenue(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "venue_id", name="unique_user_venue_save"),
     )
+
+
+# --- 5. Reviews (NEW) ---
+class Review(Base):
+    __tablename__ = "reviews"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    venue_id = Column(Integer, ForeignKey("venues.id"))
+    rating = Column(Integer, nullable=False)
+    comment = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    venue = relationship("Venue", back_populates="reviews")
