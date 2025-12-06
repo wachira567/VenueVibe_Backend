@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import get_db, User, Venue, Booking, SavedVenue
+from sms_service import sms_service
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 import cloudinary
@@ -107,6 +108,7 @@ class UserSchema(BaseModel):
     username: str
     email: str
     password: str
+    phone: str  # Required phone number for SMS notifications
     role: str = "Client"
 
 
@@ -126,8 +128,8 @@ class BookingSchema(BaseModel):
     event_date: str
     end_date: Optional[str] = None
     guest_count: int
-    contact_email: str
-    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: str  # Required for SMS notifications
 
 
 # --- Google OAuth Routes ---
@@ -221,10 +223,16 @@ def create_user(user: UserSchema, db: Session = Depends(get_db)):
         username=user.username,
         email=user.email,
         password_hash=hashed_password,
+        phone=user.phone,
         role=user.role,
     )
     db.add(new_user)
     db.commit()
+    db.refresh(new_user)
+
+    # Send welcome SMS
+    sms_service.send_welcome_sms(new_user.phone, new_user.username)
+
     return {"message": "User created", "user_id": new_user.id}
 
 
@@ -348,6 +356,12 @@ def create_booking(booking: BookingSchema, db: Session = Depends(get_db)):
 
     db.add(new_booking)
     db.commit()
+    db.refresh(new_booking)
+
+    # Send booking received SMS notification using contact phone from booking
+    if booking.contact_phone:
+        event_date_str = event_date.strftime("%Y-%m-%d")
+        sms_service.send_booking_received_sms(booking.contact_phone, venue.name, event_date_str)
 
     return {"message": "Booking request submitted", "status": "Pending"}
 
@@ -466,6 +480,16 @@ def update_booking_status_admin(
 
     db.commit()
 
+    # Send SMS notification for status changes using booking contact phone
+    if "status" in status_update:
+        venue = db.query(Venue).filter(Venue.id == booking.venue_id).first()
+
+        if booking.contact_phone and venue:
+            if status_update["status"] == "Approved":
+                sms_service.send_booking_approved_sms(booking.contact_phone, venue.name)
+            elif status_update["status"] == "Rejected":
+                sms_service.send_booking_rejected_sms(booking.contact_phone, venue.name)
+
     return {"message": "Booking updated"}
 
 
@@ -571,6 +595,49 @@ def get_all_users(authorization: str = Header(...), db: Session = Depends(get_db
             raise HTTPException(status_code=403, detail="Admin access required")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# --- SMS Event Reminders (Admin endpoint) ---
+@app.post("/admin/send-event-reminders")
+def send_event_reminders_admin(
+    authorization: str = Header(...), db: Session = Depends(get_db)
+):
+    """Send SMS reminders for events happening tomorrow (Admin only)"""
+    # Auth check
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user or user.role != "Admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Get tomorrow's date
+    tomorrow = date.today() + timedelta(days=1)
+    tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+
+    # Find approved bookings for tomorrow
+    tomorrow_bookings = (
+        db.query(Booking)
+        .filter(Booking.status == "Approved")
+        .filter(func.date(Booking.event_date) == tomorrow)
+        .all()
+    )
+
+    sent_count = 0
+    for booking in tomorrow_bookings:
+        venue = db.query(Venue).filter(Venue.id == booking.venue_id).first()
+
+        if booking.contact_phone and venue:
+            success = sms_service.send_event_reminder_sms(
+                booking.contact_phone, venue.name, tomorrow_str
+            )
+            if success:
+                sent_count += 1
+
+    return {"message": f"Sent {sent_count} event reminders for tomorrow"}
 
     users = db.query(User).all()
     return [
