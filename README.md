@@ -10,7 +10,7 @@ VenueVibe Backend is the server-side component of a full-stack venue booking pla
 
 - **Backend API:** https://venuevibe-backend.onrender.com/
 - **API Documentation:** https://venuevibe-backend.onrender.com/docs
-- **Frontend Application:** https://venue-vibe-frontend-git-main-washiras-projects-fb5072e5.vercel.app
+- **Frontend Application:** https://venue-vibe-frontend-git-main-washiras-projects-fb5072e5.vercel.app/
 
 ## Repository Links
 
